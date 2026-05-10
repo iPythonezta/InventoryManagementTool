@@ -1,109 +1,140 @@
-import { Button, Container, Nav, Table } from "react-bootstrap";
-import { useUserContext } from "../Context/UserContextProvider";
-import { useState, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
-import NavigationBar from "../Components/Navbar";
-import { useReactToPrint } from "react-to-print";
-import axios from "axios";
-import './assets/receipt.css';
-import DisplayUser from "../Components/DisplayUser";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../Context/AuthContext';
+import { useReactToPrint } from 'react-to-print';
+import axios from 'axios';
+import {
+  Box, Button, Card, CardContent, Typography, Table, TableHead, TableBody,
+  TableRow, TableCell, TableContainer, Divider, Alert,
+} from '@mui/material';
+import PrintIcon from '@mui/icons-material/Print';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import PageLayout from '../Components/Layout/PageLayout';
+import API_BASE_URL from '../config';
+
 export default function Receipt() {
-    const {id} = useParams(); 
-    const {user, loggedIn, token} = useUserContext();
-    const [order, setOrder] = useState({});
-    const receiptRef = useRef();
-    const navigate = useNavigate();
+  const { id } = useParams();
+  const { loggedIn, token } = useAuth();
+  const [order, setOrder] = useState({});
+  const receiptRef = useRef();
+  const navigate = useNavigate();
 
-    const fetchOrder = async () => {
-        await axios.get(`http://127.0.0.1:8000/api/order/${id}/`, {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            setOrder(response.data);
-            console.log(response.data);
-        })
-        .catch((error) => {
-            console.log(error);
-        })
-    }
+  const handlePrint = useReactToPrint({
+    content: () => receiptRef.current,
+    documentTitle: `Receipt ${order.orderId}`,
+  });
 
-    const handlePrint = useReactToPrint({
-        content: () => receiptRef.current,
-        documentTitle: `Order ${order.orderId} Receipt`,
-    });
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/api/order/${id}/`, {
+      headers: { Authorization: `Token ${token}` },
+    }).then(r => setOrder(r.data)).catch(() => {});
+  }, [token, id]);
 
-    useEffect(() => {
-        if (token) {
-            fetchOrder();
-        }
-    }, [token])
-
-    if (!loggedIn) {
-        return (
-            <Container className='page-container'>
-                <NavigationBar active='home' />
-                <h1 className='major-heading'>Please login to continue</h1>
-            </Container>
-        )
-    }
-    
+  if (!loggedIn) {
     return (
-        <Container className="page-container">
-            <NavigationBar />
-            <DisplayUser />
-            <Container className="width-controller">
-                <Container className="receipt-container" ref={receiptRef}>
-                    <h1 className="major-heading brand">Inventory Management Tool</h1>
-                    <p className="desc">Thank you for shopping with us!</p>
-                    <Container className="details-container">
-                        <p>Order ID: <strong>{order.orderId}</strong></p>
-                        <p>Customer Name: <strong>{order.customerName}</strong></p>
-                        <p>Customer Phone: <strong>{order.customerPhone}</strong></p>
-                    </Container>
-                    <Container className="receipt">
-                        <Table>
-                            <thead>
-                                <tr>
-                                    <th>Product Name</th>
-                                    <th>Quantity</th>
-                                    <th>Unit Price</th>
-                                    <th>Total Price</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {order?.products?.map((item) => {
-                                    return (
-                                        <tr>
-                                            <td>{item.product.productName}</td>
-                                            <td>{item.quantity}</td>
-                                            <td>PKR {item.product.price}</td>
-                                            <td>PKR {item.product.price * item.quantity}</td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colSpan={3} className="text-end">Total</td>
-                                    <td><strong>PKR {order.total_price}</strong></td>
-                                </tr>
-                            </tfoot>
-                        </Table>
-                        <p className="date text-center">
-                            This receipt was generated on {new Date(order.orderDate).toLocaleDateString()}&nbsp;
-                            at {new Date(order.orderDate).toLocaleTimeString()}
-                        </p>
-                    </Container>
-                </Container>
-            </Container>
-            <Container className="button-container">
-                <Button variant="primary" onClick={() => navigate('/orders')}>Back to Orders</Button>
-                <Button variant="primary" onClick={handlePrint}>Print</Button>
-                <Button variant="primary" onClick={() => navigate('/checkout')} >Back to Checkout</Button>
-            </Container>
-        </Container>
-    )
+      <PageLayout title="Receipt">
+        <Alert severity="info">Please log in to continue.</Alert>
+      </PageLayout>
+    );
+  }
+
+  return (
+    <PageLayout title="Receipt">
+      <Box sx={{ maxWidth: 700, mx: 'auto' }}>
+        <Card ref={receiptRef}>
+          <CardContent sx={{ p: 4 }}>
+            {/* Header */}
+            <Box sx={{ textAlign: 'center', mb: 4 }}>
+              <Typography variant="h2" fontWeight={800} color="primary.main">InventoryPro</Typography>
+              <Typography variant="body2" color="text.secondary">Thank you for shopping with us!</Typography>
+            </Box>
+
+            <Divider sx={{ mb: 3 }} />
+
+            {/* Order info */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 3 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary" textTransform="uppercase" fontWeight={600}>Order ID</Typography>
+                <Typography variant="body1" fontWeight={700} color="primary.main">{order.orderId}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" textTransform="uppercase" fontWeight={600}>Date</Typography>
+                <Typography variant="body1">
+                  {order.orderDate ? new Date(order.orderDate).toLocaleDateString() : '—'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" textTransform="uppercase" fontWeight={600}>Customer</Typography>
+                <Typography variant="body1" fontWeight={600}>{order.customerName}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" textTransform="uppercase" fontWeight={600}>Phone</Typography>
+                <Typography variant="body1">{order.customerPhone}</Typography>
+              </Box>
+            </Box>
+
+            <Divider sx={{ mb: 3 }} />
+
+            {/* Items */}
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Product</TableCell>
+                    <TableCell align="right">Qty</TableCell>
+                    <TableCell align="right">Unit Price</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(order.products || []).map(item => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.product.productName}</TableCell>
+                      <TableCell align="right">{item.quantity}</TableCell>
+                      <TableCell align="right">PKR {item.product.price.toLocaleString()}</TableCell>
+                      <TableCell align="right" fontWeight={600}>
+                        PKR {(item.product.price * item.quantity).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="caption" color="text.secondary">Grand Total</Typography>
+                <Typography variant="h3" fontWeight={800} color="primary.main">
+                  PKR {Number(order.total_price || 0).toLocaleString()}
+                </Typography>
+              </Box>
+            </Box>
+
+            <Box sx={{ textAlign: 'center', mt: 4 }}>
+              <Typography variant="caption" color="text.secondary">
+                Generated on {order.orderDate ? new Date(order.orderDate).toLocaleString() : '—'}
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Action buttons (not printed) */}
+        <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'center' }} className="no-print">
+          <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/orders')}>
+            Back to Orders
+          </Button>
+          <Button variant="contained" startIcon={<PrintIcon />} onClick={handlePrint}>
+            Print Receipt
+          </Button>
+          <Button variant="outlined" startIcon={<ShoppingCartIcon />} onClick={() => navigate('/checkout')}>
+            New Order
+          </Button>
+        </Box>
+      </Box>
+    </PageLayout>
+  );
 }

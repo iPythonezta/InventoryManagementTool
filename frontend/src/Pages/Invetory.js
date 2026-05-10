@@ -1,342 +1,279 @@
-import { Button, Container, Table, Modal, Form } from "react-bootstrap";
-import NavigationBar from "../Components/Navbar";
-import DisplayUser from "../Components/DisplayUser";
-import { useUserContext } from "../Context/UserContextProvider";
-import { useState, useEffect } from "react";
-import { toast } from "react-toastify";
+import { useState, useEffect } from 'react';
+import { useAuth } from '../Context/AuthContext';
+import { useDevices } from '../Context/DeviceContext';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 import Barcode from 'react-barcode';
-import axios from "axios";
-import './assets/inventory.css';
-import { useZxing } from 'react-zxing';
+import {
+  Box, Button, Card, TextField, InputAdornment, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions, Typography,
+  Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Alert, Chip,
+} from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
+import PageLayout from '../Components/Layout/PageLayout';
+import BarcodeScanner from '../Components/UI/BarcodeScanner';
+import ConfirmDialog from '../Components/UI/ConfirmDialog';
+import API_BASE_URL from '../config';
 
-export default function Inventory({devices}) {
-    const { user, loggedIn, token } = useUserContext();
-    const [paused, setPaused] = useState(true);
-    const [inventory, setInventory] = useState([]);
-    const [show, setShow] = useState(false);
-    const [formData, setFormData] = useState({
-        barcode: '',
-        productName: '',
-        price: 0,
-        quantity: '',
-        supplierName: '',
-        supplierEmail: '',
-    });
-    const [editMode, setEditMode] = useState(false);
-    const [filteredInventory, setFilteredInventory] = useState([]);
-    const [query, setQuery] = useState('');
-    const [scan, setScan] = useState(false); // I am using this to monitor the state of the 2nd barcode scan (the one to search)
+const emptyForm = { barcode: '', productName: '', price: 0, quantity: '', supplierName: '', supplierEmail: '' };
 
-    const fetchInventory = async () => {
-        await axios.get('http://127.0.0.1:8000/api/inventory/', {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            setInventory(response.data);
-            setFilteredInventory(response.data);
-        })
-        .catch((error) => {
-            toast.error('Something went wrong, Could not fetch inventory');
-        })
-    };
+export default function Inventory() {
+  const { user, loggedIn, token } = useAuth();
+  const devices = useDevices();
+  const [inventory, setInventory] = useState([]);
+  const [filteredInventory, setFilteredInventory] = useState([]);
+  const [query, setQuery] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState(emptyForm);
+  const [editMode, setEditMode] = useState(false);
+  const [scanActive, setScanActive] = useState(false);
+  const [scanTarget, setScanTarget] = useState('form');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
-    useEffect(() => {
+  const canModify = user?.userType?.toLowerCase() === 'manager' || user?.userType?.toLowerCase() === 'admin' || user?.is_superuser;
+  const canDelete = user?.userType?.toLowerCase() === 'admin' || user?.is_superuser;
+  const deviceId = devices.length > 0 ? devices[0].deviceId : undefined;
 
-        if (token) {
-            fetchInventory();
-        }
-    }, [token]);
-
-
-    const handleFormDataChange = (event) => {
-        setFormData({
-            ...formData,
-            [event.target.name]: event.target.value
-        });
-    };
-
-    const userIsAuthorized = () => {
-        return user?.userType?.toLowerCase() === 'manager' || user?.userType?.toLowerCase() === 'admin' || user?.is_superuser;
-    };
-
-    const handleAddItem = async () => {
-        try {
-            await axios.post('http://127.0.0.1:8000/api/inventory/', formData, {
-                headers: {
-                    Authorization: `Token ${token}`
-                }
-            });
-            toast.success('Item added successfully');
-            setShow(false);
-            setFormData({
-                barcode: '',
-                productName: '',
-                price: 0,
-                quantity: '',
-                supplierName: '',
-                supplierEmail: '',
-            });
-            fetchInventory();
-        } catch (error) {
-            toast.error('Something went wrong, Could not add item');
-        }
-    };
-
-    const handleDelete = async (barcode) => {
-        try {
-            await axios.delete('http://127.0.0.1:8000/api/inventory/', {
-                headers: {
-                    Authorization: `Token ${token}`
-                },
-                data: {
-                    barcode: barcode
-                }
-            });
-            toast.success('Item deleted successfully');
-            fetchInventory();
-        } catch (error) {
-            toast.error('Something went wrong, Could not delete item');
-        }
-    };
-
-    const { ref } = useZxing({
-        deviceId: devices.length > 0 ? devices[0].deviceId : null,
-        paused: paused,
-        onDecodeResult: (result) => {
-            console.log(result);
-            if (!scan){
-                setFormData({
-                    ...formData,
-                    barcode: result.text
-                })}
-            else {
-                setQuery(result.text);
-            }
-            setPaused(true);
-            setScan(false);
-        },
-        timeBetweenDecodingAttempts: 1,
-    });
-
-    const handleEdit = (item) => {
-        console.log(item);
-        setFormData({
-            id: item.id,
-            barcode: item.barcode,
-            productName: item.productName,
-            price: item.price,
-            quantity: item.quantity,
-            supplierName: item.supplierName,
-            supplierEmail: item.supplierEmail
-        });
-        setEditMode(true);
-        setShow(true);
-    };
-
-    const handleEditItem = async () => {
-        console.log(formData);
-        await axios.put('http://127.0.0.1:8000/api/inventory/', formData, {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            toast.success('Item edited successfully');
-            setShow(false);
-            setEditMode(false);
-            setFormData({
-                barcode: '',
-                productName: '',
-                price: 0,
-                quantity: '',
-                supplierName: '',
-                supplierEmail: '',
-            });
-            fetchInventory();
-        })
-        .catch((error) => {
-            toast.error('Something went wrong, Could not edit item');
-        })
+  const fetchInventory = async () => {
+    if (!token) return;
+    try {
+      const { data } = await axios.get(`${API_BASE_URL}/api/inventory/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
+      setInventory(data);
+      setFilteredInventory(data);
+    } catch {
+      toast.error('Could not fetch inventory');
     }
-    
-    const scanBarcode = async () => {
-        setScan(true);
-        setPaused(false);
-    };
+  };
 
-    useEffect(() => {
-        console.log(query);
-        if (query) {
-            let newFilteredInventory = inventory.filter((item) => (
-                item.productName.toLowerCase().includes(query.toLowerCase()) ||
-                item.barcode.toLowerCase().includes(query.toLowerCase()) ||
-                item.supplierName.toLowerCase().includes(query.toLowerCase())
-            ));
-            setFilteredInventory(newFilteredInventory);
-            console.log(newFilteredInventory);
-        }
-       else {
-           setFilteredInventory(inventory);
-       }
-    }, [query]);
+  useEffect(() => { fetchInventory(); }, [token]);
 
-    const deleteAuthorized = () => {
-        return user?.userType?.toLowerCase() === 'admin' || user?.is_superuser;
-    };
+  useEffect(() => {
+    if (!query) { setFilteredInventory(inventory); return; }
+    const q = query.toLowerCase();
+    setFilteredInventory(inventory.filter(i =>
+      i.productName.toLowerCase().includes(q) ||
+      i.barcode.toLowerCase().includes(q) ||
+      i.supplierName.toLowerCase().includes(q)
+    ));
+  }, [query, inventory]);
 
-    if (!loggedIn) {
-        return (
-            <Container className="page-container">
-                <NavigationBar active="inventory" />
-                <h1 className="major-heading">Please login to continue</h1>
-            </Container>
-        );
+  const handleFieldChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
+  const handleSave = async () => {
+    try {
+      if (editMode) {
+        await axios.put(`${API_BASE_URL}/api/inventory/`, formData, { headers: { Authorization: `Token ${token}` } });
+        toast.success('Item updated');
+      } else {
+        await axios.post(`${API_BASE_URL}/api/inventory/`, formData, { headers: { Authorization: `Token ${token}` } });
+        toast.success('Item added');
+      }
+      setShowForm(false);
+      setFormData(emptyForm);
+      setEditMode(false);
+      fetchInventory();
+    } catch {
+      toast.error(editMode ? 'Could not update item' : 'Could not add item');
     }
+  };
 
+  const handleDelete = async () => {
+    try {
+      await axios.delete(`${API_BASE_URL}/api/inventory/`, {
+        headers: { Authorization: `Token ${token}` },
+        data: { barcode: deleteTarget },
+      });
+      toast.success('Item deleted');
+      setDeleteTarget(null);
+      fetchInventory();
+    } catch {
+      toast.error('Could not delete item');
+    }
+  };
+
+  const handleEdit = (item) => {
+    setFormData({ id: item.id, barcode: item.barcode, productName: item.productName, price: item.price, quantity: item.quantity, supplierName: item.supplierName, supplierEmail: item.supplierEmail });
+    setEditMode(true);
+    setShowForm(true);
+  };
+
+  const handleScan = (text) => {
+    if (scanTarget === 'form') {
+      setFormData(prev => ({ ...prev, barcode: text }));
+    } else {
+      setQuery(text);
+    }
+    setScanActive(false);
+  };
+
+  if (!loggedIn) {
     return (
-        <Container className="page-container">
-            <NavigationBar active="inventory" />
-            <Container className="page-container">
-                <DisplayUser />
-                <h1 className="heading">Inventory</h1>
-                {userIsAuthorized() && (
-                    <Container className="button-container">
-                        <Button variant="warning" className="btn-add" size="md" onClick={() => setShow(true)}>Add Item</Button>
-                    </Container>
-                )}
-                <Container className="search-container">
-                    <Form.Control type="text" placeholder="Search Inventory" value={query} onChange={(e) => setQuery(e.target.value)} />
-                    {/* <Button variant="success" className="btn-add" size="md" disabled>Search</Button> */}
-                    <Button variant="primary" size="md" className="btn-add" onClick={scanBarcode}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-upc-scan" viewBox="0 0 16 16">
-                            <path d="M1.5 1a.5.5 0 0 0-.5.5v3a.5.5 0 0 1-1 0v-3A1.5 1.5 0 0 1 1.5 0h3a.5.5 0 0 1 0 1zM11 .5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 16 1.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 1-.5-.5M.5 11a.5.5 0 0 1 .5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 1 0 1h-3A1.5 1.5 0 0 1 0 14.5v-3a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 1 .5-.5M3 4.5a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0z"/>
-                        </svg>
-                    </Button>
-                </Container>
-                {scan && 
-                    <Container className="video-container">
-                        <video ref={ref} style={{width:'300px'}} />
-                        <Container className="button-container">
-                            <Button onClick={() => {
-                                setScan(false);
-                                setPaused(true);
-                            }}>Stop Scanning</Button>
-                        </Container>
-                    </Container>
-                }
-                <Container className="inventory-table-container">
-                    <Table responsive hover striped bordered>
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Bar Code</th>
-                                <th>Item Name</th>
-                                <th>Price (PKR)</th>
-                                <th>Stock Quantity</th>
-                                <th>Supplier Name</th>
-                                <th>Supplier Contact</th>
-                                {userIsAuthorized() && <th>Delete</th>}
-                                {userIsAuthorized() && <th>Edit</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredInventory.map((item, index) => (
-                                <tr key={index}>
-                                    <td>{index + 1}</td>
-                                    <td>
-                                        <Barcode value={item.barcode} height={55} fontSize={20} format="CODE128"/>
-                                    </td>
-                                    <td>{item.productName}</td>
-                                    <td>{item.price}</td>
-                                    <td>{item.quantity}</td>
-                                    <td>{item.supplierName}</td>
-                                    <td>{item.supplierEmail}</td>
-                                    {userIsAuthorized() && (
-                                        <td>
-                                            <Button variant="danger" size="sm" onClick={() => handleDelete(item.barcode)}>
-                                                Delete
-                                            </Button>
-                                        </td>
-                                    )}
-                                    {userIsAuthorized() && (
-                                        <td>
-                                            <Button variant="primary" size="sm" onClick={() => handleEdit(item)}>
-                                                Edit
-                                            </Button>
-                                        </td>
-                                    )}
-
-                                </tr>
-                            ))}
-                        </tbody>
-                    </Table>
-                </Container>
-            </Container>
-            <Container>
-                <Modal show={show} onHide={() => setShow(false)}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>Add Item</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <Form>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Bar Code</Form.Label>
-                                <Form.Control type="text" name="barcode" value={formData.barcode} onChange={handleFormDataChange} />
-                                <Container className="button-container barcode-container">
-                                    <Button onClick={() => setPaused(false)}>Scan Barcode</Button>
-                                    {!paused && <Button onClick={() => setPaused(true)}>Stop Scanning</Button>}
-                                </Container>
-                                {
-                                    !paused && 
-                                        <Container className="video-container">
-                                            <video ref={ref} style={{width:'300px', height:'300px'}} />
-                                        </Container>
-                                }
-
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Item Name</Form.Label>
-                                <Form.Control type="text" name="productName" value={formData.productName} onChange={handleFormDataChange} />
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Price</Form.Label>
-                                <Form.Control type="number" name="price" value={formData.price} onChange={handleFormDataChange} />
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Stock Quantity</Form.Label>
-                                <Form.Control type="number" name="quantity" value={formData.quantity} onChange={handleFormDataChange} />
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Supplier Name</Form.Label>
-                                <Form.Control type="text" name="supplierName" value={formData.supplierName} onChange={handleFormDataChange} />
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Supplier Email</Form.Label>
-                                <Form.Control type="email" name="supplierEmail" value={formData.supplierEmail} onChange={handleFormDataChange} />
-                            </Form.Group>
-                        </Form>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Container className="button-container footer">
-                            <Button variant="secondary" onClick={() => setShow(false)}>
-                                Close
-                            </Button>
-                            {!editMode &&
-                            <Button variant="primary" onClick={handleAddItem}>
-                                Add
-                            </Button>}
-                            {
-                                editMode &&
-                                <Button variant="primary" onClick={handleEditItem}>
-                                    Edit
-                                </Button>
-                            }
-                        </Container>
-                    </Modal.Footer>
-                </Modal>
-            </Container>
-        </Container>
+      <PageLayout title="Inventory">
+        <Alert severity="info">Please log in to continue.</Alert>
+      </PageLayout>
     );
+  }
+
+  return (
+    <PageLayout title="Inventory">
+      {/* Toolbar */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+        <TextField
+          placeholder="Search by name, barcode, or supplier"
+          size="small"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          sx={{ flexGrow: 1, maxWidth: 400 }}
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+            endAdornment: (
+              <IconButton size="small" onClick={() => { setScanTarget('search'); setScanActive(true); }}>
+                <QrCodeScannerIcon fontSize="small" />
+              </IconButton>
+            ),
+          }}
+        />
+        {canModify && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setFormData(emptyForm); setEditMode(false); setShowForm(true); }}>
+            Add Item
+          </Button>
+        )}
+      </Box>
+
+      {scanActive && scanTarget === 'search' && (
+        <BarcodeScanner active={scanActive} onScan={handleScan} onClose={() => setScanActive(false)} deviceId={deviceId} />
+      )}
+
+      {/* Table */}
+      <Card>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>#</TableCell>
+                <TableCell>Barcode</TableCell>
+                <TableCell>Product Name</TableCell>
+                <TableCell align="right">Price (PKR)</TableCell>
+                <TableCell align="right">Stock</TableCell>
+                <TableCell>Supplier</TableCell>
+                <TableCell>Contact</TableCell>
+                {canModify && <TableCell align="center">Actions</TableCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredInventory.map((item, index) => (
+                <TableRow key={item.id}>
+                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.8125rem' }}>{index + 1}</TableCell>
+                  <TableCell>
+                    <Barcode value={item.barcode} height={40} width={1.2} fontSize={11} format="CODE128" />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={600}>{item.productName}</Typography>
+                  </TableCell>
+                  <TableCell align="right">PKR {item.price.toLocaleString()}</TableCell>
+                  <TableCell align="right">
+                    <Chip
+                      label={item.quantity}
+                      size="small"
+                      color={item.quantity <= 5 ? 'error' : item.quantity <= 20 ? 'warning' : 'success'}
+                      variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell>{item.supplierName}</TableCell>
+                  <TableCell sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>{item.supplierEmail}</TableCell>
+                  {canModify && (
+                    <TableCell align="center">
+                      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                        <IconButton size="small" color="primary" onClick={() => handleEdit(item)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        {canDelete && (
+                          <IconButton size="small" color="error" onClick={() => setDeleteTarget(item.barcode)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Box>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+              {filteredInventory.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                    No inventory items found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showForm} onClose={() => setShowForm(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>{editMode ? 'Edit Item' : 'Add Item'}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: '16px !important' }}>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+            <TextField
+              label="Barcode"
+              name="barcode"
+              value={formData.barcode}
+              onChange={handleFieldChange}
+              fullWidth
+              size="small"
+            />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<QrCodeScannerIcon />}
+              onClick={() => { setScanTarget('form'); setScanActive(true); setShowForm(false); }}
+              sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Scan
+            </Button>
+          </Box>
+          <TextField label="Product Name" name="productName" value={formData.productName} onChange={handleFieldChange} fullWidth size="small" />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField label="Price (PKR)" name="price" type="number" value={formData.price} onChange={handleFieldChange} fullWidth size="small" />
+            <TextField label="Stock Quantity" name="quantity" type="number" value={formData.quantity} onChange={handleFieldChange} fullWidth size="small" />
+          </Box>
+          <TextField label="Supplier Name" name="supplierName" value={formData.supplierName} onChange={handleFieldChange} fullWidth size="small" />
+          <TextField label="Supplier Email" name="supplierEmail" type="email" value={formData.supplierEmail} onChange={handleFieldChange} fullWidth size="small" />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button variant="outlined" onClick={() => setShowForm(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSave}>{editMode ? 'Update' : 'Add Item'}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Scan modal (outside form dialog) */}
+      {scanActive && scanTarget === 'form' && (
+        <Dialog open={scanActive} onClose={() => setScanActive(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Scan Barcode</DialogTitle>
+          <DialogContent>
+            <BarcodeScanner
+              active={scanActive}
+              onScan={(text) => { handleScan(text); setShowForm(true); }}
+              onClose={() => { setScanActive(false); setShowForm(true); }}
+              deviceId={deviceId}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete Item"
+        message={`Are you sure you want to delete item with barcode "${deleteTarget}"? This cannot be undone.`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </PageLayout>
+  );
 }

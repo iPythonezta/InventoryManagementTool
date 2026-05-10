@@ -1,248 +1,183 @@
-import NavigationBar from '../Components/Navbar';
-import DisplayUser from '../Components/DisplayUser';
-
-import { Container, Button, Tab } from 'react-bootstrap';
-import { useUserContext } from '../Context/UserContextProvider';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../Context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-
 import axios from 'axios';
-import Box from '@mui/material/Box';
-import Collapse from '@mui/material/Collapse';
-import IconButton from '@mui/material/IconButton';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TableRow from '@mui/material/TableRow';
-import Typography from '@mui/material/Typography';
-import Paper from '@mui/material/Paper';
+import {
+  Box, Card, Typography, Table, TableHead, TableBody, TableRow, TableCell,
+  TableContainer, IconButton, Button, Collapse, Alert, Chip,
+} from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import PageLayout from '../Components/Layout/PageLayout';
+import ConfirmDialog from '../Components/UI/ConfirmDialog';
+import API_BASE_URL from '../config';
 
-import './assets/orders.css';
+function OrderRow({ order, onDelete, canDelete, navigate }) {
+  const [expanded, setExpanded] = useState(false);
+  const actualId = order.orderId?.slice(1);
+  const formattedDate = order.orderDate
+    ? `${new Date(order.orderDate).toLocaleDateString()} ${new Date(order.orderDate).toLocaleTimeString()}`
+    : '—';
 
-const OrderRow = (props) => {
-    const {id, orderItems, date, customerName, customerPhone, total, handleDelete, userIsAuthorized, navigate, actualId} = props;
-    const [expanded, setExpanded] = useState(false);
-    return (
-        <>
-            <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
-                <TableCell>
-                    <IconButton
-                        size="small"
-                        onClick={() => setExpanded(!expanded)}
-                    >
-                        {expanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
-                    </IconButton>
-                </TableCell>
-                <TableCell align="center">{id}</TableCell>
-                <TableCell align="center">{date}</TableCell>
-                <TableCell align="center">{customerName}</TableCell>
-                <TableCell align="center">{customerPhone}</TableCell>
-                <TableCell align="center">PKR {total}</TableCell>
-                <TableCell align="center">
-                    <Button variant="primary" size="sm" onClick={() => navigate(`/receipt/${actualId(id)}`)}>
-                        View Receipt
-                    </Button>
-                </TableCell>
-                {userIsAuthorized() && <TableCell align="center">
-                    <Button variant="danger" size="sm" onClick={() => handleDelete(id)}>
-                        Delete
-                    </Button>
-                </TableCell>}
-            </TableRow>
-            <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
-                    <Collapse in={expanded} timeout="auto" unmountOnExit>
-                        <Box sx={{ margin: 1 }}>
-                            <Typography variant="h6" gutterBottom component="div">
-                                Order Items
-                            </Typography>
-                            <Table size="small" aria-label="purchases">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Product Name</TableCell>
-                                        <TableCell align="center">Quantity</TableCell>
-                                        <TableCell align="center">Unit Price (PKR)</TableCell>
-                                        <TableCell align="center">Total Price (PKR)</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {orderItems.map((item) => (
-                                        <TableRow key={item.id}>
-                                            <TableCell component="th" scope="row">
-                                                {item.product.productName}
-                                            </TableCell>
-                                            <TableCell align="center">{item.quantity}</TableCell>
-                                            <TableCell align="center">PKR {item.product.price}</TableCell>
-                                            <TableCell align="center">PKR {item.quantity * item.product.price}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </Box>
-                    </Collapse>
-                </TableCell>
-            </TableRow>
-        </>
-    )
+  return (
+    <>
+      <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
+        <TableCell>
+          <IconButton size="small" onClick={() => setExpanded(p => !p)}>
+            {expanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+          </IconButton>
+        </TableCell>
+        <TableCell>
+          <Chip label={order.orderId} size="small" sx={{ fontWeight: 700, bgcolor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }} />
+        </TableCell>
+        <TableCell>{formattedDate}</TableCell>
+        <TableCell fontWeight={600}>{order.customerName}</TableCell>
+        <TableCell color="text.secondary">{order.customerPhone}</TableCell>
+        <TableCell align="right" sx={{ fontWeight: 700 }}>PKR {Number(order.total_price).toLocaleString()}</TableCell>
+        <TableCell align="center">
+          <Button size="small" variant="outlined" startIcon={<ReceiptIcon />} onClick={() => navigate(`/receipt/${actualId}`)}>
+            Receipt
+          </Button>
+        </TableCell>
+        {canDelete && (
+          <TableCell align="center">
+            <IconButton size="small" color="error" onClick={() => onDelete(order.orderId)}>
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </TableCell>
+        )}
+      </TableRow>
+      <TableRow>
+        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={canDelete ? 8 : 7}>
+          <Collapse in={expanded} timeout="auto" unmountOnExit>
+            <Box sx={{ m: 2 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, textTransform: 'uppercase', color: 'text.secondary', letterSpacing: '0.05em' }}>
+                Order Items
+              </Typography>
+              <Table size="small" sx={{ mt: 1 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Product</TableCell>
+                    <TableCell align="right">Qty</TableCell>
+                    <TableCell align="right">Unit Price (PKR)</TableCell>
+                    <TableCell align="right">Total (PKR)</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(order.products || []).map(item => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.product.productName}</TableCell>
+                      <TableCell align="right">{item.quantity}</TableCell>
+                      <TableCell align="right">PKR {item.product.price.toLocaleString()}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>
+                        PKR {(item.quantity * item.product.price).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+          </Collapse>
+        </TableCell>
+      </TableRow>
+    </>
+  );
 }
 
-export default function Orders(){
-    const {user, loggedIn, token} = useUserContext();
-    const [orders, setOrders] = useState([]);
-    const navigate = useNavigate();
+export default function Orders() {
+  const { user, loggedIn, token } = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const navigate = useNavigate();
 
-    const fetchOrders = async () => {
-        await axios.get('http://127.0.0.1:8000/api/order/', {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            setOrders(response.data);
-            console.log(response.data);
-        })
-        .catch((error) => {
-            console.log(error);
-        })
+  const canDelete = user?.userType?.toLowerCase() === 'admin' || user?.is_superuser;
+
+  const fetchOrders = async () => {
+    if (!token) return;
+    try {
+      const { data } = await axios.get(`${API_BASE_URL}/api/order/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
+      setOrders(data);
+    } catch {
+      toast.error('Could not fetch orders');
     }
+  };
 
-    useEffect(() => {
-        if (token) {
-            fetchOrders();
-        }
-    }, [token])
+  useEffect(() => { fetchOrders(); }, [token]);
 
-    const getActualId = (id) => {
-        return (
-            id.slice(1)
-        )
+  const handleDelete = async () => {
+    try {
+      await axios.delete(`${API_BASE_URL}/api/order/`, {
+        headers: { Authorization: `Token ${token}` },
+        data: { orderId: deleteTarget },
+      });
+      toast.success('Order deleted');
+      setDeleteTarget(null);
+      fetchOrders();
+    } catch {
+      toast.error('Could not delete order');
     }
+  };
 
-    const userIsAuthorized = () => {
-        return user?.userType?.toLowerCase() === 'admin';
-    }
-
-    const handleDelete = async (id) => {
-        await axios.delete(`http://127.0.0.1:8000/api/order/`, {
-            headers: {
-                Authorization: `Token ${token}`
-            },
-            data: {
-                orderId: id
-            }
-        })
-        .then((response) => {
-            console.log(response.data);
-            toast.success('Order deleted successfully!');
-            fetchOrders();
-        })
-        .catch((error) => {
-            console.log(error);
-            toast.error('Something went wrong, Could not delete order');
-        })
-    }
-
-    const columns = [
-        { field: 'orderId', headerName: 'Order ID', flex:1, align:'center', headerAlign:'center'},
-        { field: 'orderDate', headerName: 'Order Date', flex:1, align:'center', headerAlign:'center'},
-        { field: 'customerName', headerName: 'Customer Name', flex:1, align:'center', headerAlign:'center', sortable: false },
-        { field: 'customerPhone', headerName: 'Customer Phone', flex:1, align:'center', headerAlign:'center', sortable: false },
-        { field: 'totalPrice', headerName: 'Total Price (PKR)', flex:1, align:'center', headerAlign:'center' },
-        { field: 'receipt', headerName: 'Receipt', flex:1, align:'center', headerAlign:'center', sortable: false, 
-            renderCell: 
-                (params)=> {
-                    return (
-                        <Button 
-                            variant='primary' 
-                            size='sm'
-                            onClick={() => navigate(`/receipt/${getActualId(params.row.orderId)}`)}
-                        >
-                            Order Receipt
-                        </Button>
-                    )
-                }
-        },
-        {field: 'delete', headerName: 'Delete', flex:1, align:'center', headerAlign:'center', sortable: false, 
-            renderCell: (params)=> {
-                return (
-                    <Button 
-                        variant='danger' 
-                        size='sm'
-                        onClick={()=>handleDelete(params.row.orderId)}
-                    >
-                        Delete
-                    </Button>
-                )
-            }
-        }
-    ]
-
-    const rows = orders.map((order) => ({
-        id: order.orderId,
-        orderId: order.orderId,
-        orderDate: `${new Date(order.orderDate).toLocaleDateString()} ${new Date(order.orderDate).toLocaleTimeString()}`,
-        customerName: order.customerName,
-        customerPhone: order.customerPhone,
-        totalPrice: `PKR ${order.total_price}`
-    }))
-
-    
-    if (!loggedIn) {
-        return (
-            <Container className='page-container'>
-                <NavigationBar active='orders'/>
-                <h1 className='major-heading'>Please login to continue</h1>
-            </Container>
-        )
-    }
-
+  if (!loggedIn) {
     return (
-        <Container className='page-container'>
-            <NavigationBar active='orders'/>
-            <DisplayUser />
-            <Container>    
-                <h1 className='heading'>Orders</h1>
-                <Container className='orders-container'>
-                    <TableContainer component={Paper}>
-                        <Table className='data-grid'>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell />
-                                    <TableCell align="center">Order ID</TableCell>
-                                    <TableCell align="center">Order Date</TableCell>
-                                    <TableCell align="center">Customer Name</TableCell>
-                                    <TableCell align="center">Customer Phone</TableCell>
-                                    <TableCell align="center">Total Price (PKR)</TableCell>
-                                    <TableCell align="center">Receipt</TableCell>
-                                    {userIsAuthorized() && <TableCell align="center">Delete</TableCell>}
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {orders?.map((order) => (
-                                    <OrderRow 
-                                        key={order.orderId} 
-                                        id={order.orderId} 
-                                        orderItems={order.products ? order.products : []}  
-                                        date={new Date(order.orderDate).toLocaleDateString() + ' ' + new Date(order.orderDate).toLocaleTimeString()} 
-                                        customerName={order.customerName} 
-                                        customerPhone={order.customerPhone}
-                                        total={order.total_price}
-                                        handleDelete={handleDelete}
-                                        userIsAuthorized={userIsAuthorized}
-                                        navigate={navigate}
-                                        actualId={getActualId}
-                                    />
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                </Container>
-            </Container>
-            </Container>
-    )
+      <PageLayout title="Orders">
+        <Alert severity="info">Please log in to continue.</Alert>
+      </PageLayout>
+    );
+  }
+
+  return (
+    <PageLayout title="Orders">
+      <Card>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell />
+                <TableCell>Order ID</TableCell>
+                <TableCell>Date</TableCell>
+                <TableCell>Customer</TableCell>
+                <TableCell>Phone</TableCell>
+                <TableCell align="right">Total (PKR)</TableCell>
+                <TableCell align="center">Receipt</TableCell>
+                {canDelete && <TableCell align="center">Delete</TableCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={canDelete ? 8 : 7} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                    No orders found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                orders.map(order => (
+                  <OrderRow
+                    key={order.orderId}
+                    order={order}
+                    onDelete={setDeleteTarget}
+                    canDelete={canDelete}
+                    navigate={navigate}
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Card>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete Order"
+        message={`Are you sure you want to delete order "${deleteTarget}"? Stock will be restored.`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+    </PageLayout>
+  );
 }

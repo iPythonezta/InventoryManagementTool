@@ -1,89 +1,113 @@
-import { Container, Form, Button } from "react-bootstrap";
-import NavigationBar from "../Components/Navbar";
-import { useState } from "react";
-import { useUserContext } from "../Context/UserContextProvider";
-import { toast, ToastContainer } from "react-toastify";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import './assets/login.css';
+import { useState } from 'react';
+import { useAuth } from '../Context/AuthContext';
+import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import {
+  Box, Card, CardContent, TextField, Button, Typography, Alert, CircularProgress,
+} from '@mui/material';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import API_BASE_URL from '../config';
 
 export default function Login() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { setUser, setToken, setLoggedIn, loggedIn } = useAuth();
 
-    const { setUser, setToken, setLoggedIn, token, loggedIn } = useUserContext();
+  if (loggedIn) {
+    navigate('/');
+    return null;
+  }
 
-    const fetchUser = async(token) => {
-        await axios.get('http://127.0.0.1:8000/auth/users/me/', {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response)=> {
-            setUser(response.data);
-            console.log(response.data);
-        })
-        .catch((error)=> {
-            console.log(error);
-        })
+  const fetchUser = async (token) => {
+    const response = await axios.get(`${API_BASE_URL}/auth/users/me/`, {
+      headers: { Authorization: `Token ${token}` },
+    });
+    setUser(response.data);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/token/login`, { email, password });
+      const token = response.data.auth_token;
+      setToken(token);
+      setLoggedIn(true);
+      localStorage.setItem('token', token);
+      await fetchUser(token);
+      toast.success('Logged in successfully!');
+      navigate('/');
+    } catch {
+      setError('Invalid email or password. Please try again.');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const handleSubmit = async(e) => {
-        e.preventDefault();
-        await axios.post('http://127.0.0.1:8000/auth/token/login', {
-            email: email,
-            password: password,
-        })
-        .then((response)=> {
-            setToken(response.data.auth_token);
-            toast.success('Logged in successfully!');
-            console.log(response.data.auth_token);
-            setLoggedIn(true);
-            fetchUser(response.data.auth_token);
-            localStorage.setItem('token', response.data.auth_token);
-            navigate('/');
-        })
-        .catch((error)=> {
-            toast.error('Invalid credentials');
-            console.log(error);
-        })
-    }
-    
-    if (loggedIn){
-       <>
-            <NavigationBar active='home' />
-            <ToastContainer />
-            <Container>
-                <h2 className="major-heading">You are already logged in!</h2>
-            </Container>
-       </>
-    }
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        p: 3,
+      }}
+    >
+      <Box sx={{ width: '100%', maxWidth: 420 }}>
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Box sx={{ display: 'inline-flex', p: 2, bgcolor: 'primary.light', borderRadius: 3, mb: 2 }}>
+            <LockOutlinedIcon sx={{ color: 'primary.main', fontSize: 32 }} />
+          </Box>
+          <Typography variant="h1" sx={{ mb: 0.5 }}>Welcome back</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Sign in to your InventoryPro account
+          </Typography>
+        </Box>
 
-    return (
-        <>
-            <NavigationBar active='login' />
-            <ToastContainer />
-            <Container>
-                <h2 className="major-heading">Login</h2>
-            </Container>
-            <Container>
-                <Form className="login-form">
-                    <Form.Group className="mb-3">
-                        <Form.Label>Email address</Form.Label>
-                        <Form.Control type="email" placeholder="Enter email" value={email} onChange={(e) => setEmail(e.target.value)} />
-                    </Form.Group>
-                    <Form.Group className="mb-3">
-                        <Form.Label>Password</Form.Label>
-                        <Form.Control type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}/>
-                    </Form.Group>
-                    <Container className="button-container">
-                        <Button variant="warning" type="submit" onClick={handleSubmit}>
-                            Submit
-                        </Button>
-                    </Container>
-                </Form>
-            </Container>
-        </>
-    )
+        <Card>
+          <CardContent sx={{ p: 4 }}>
+            {error && <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>{error}</Alert>}
+            <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <TextField
+                label="Email address"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                fullWidth
+                autoComplete="email"
+                autoFocus
+              />
+              <TextField
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                fullWidth
+                autoComplete="current-password"
+              />
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                fullWidth
+                disabled={loading}
+                sx={{ mt: 1, py: 1.5 }}
+              >
+                {loading ? <CircularProgress size={22} color="inherit" /> : 'Sign in'}
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+    </Box>
+  );
 }

@@ -1,257 +1,222 @@
-import NavigationBar from "../Components/Navbar";
-import DisplayUser from "../Components/DisplayUser";
+import { useState } from 'react';
+import { useAuth } from '../Context/AuthContext';
+import { useDevices } from '../Context/DeviceContext';
+import { toast } from 'react-toastify';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box, Button, TextField, Typography, Card, CardContent, CardHeader,
+  Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
+  IconButton, Divider, Alert, InputAdornment, Grid,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import PageLayout from '../Components/Layout/PageLayout';
+import BarcodeScanner from '../Components/UI/BarcodeScanner';
+import API_BASE_URL from '../config';
 
-import { Container, Form, Button, Table } from "react-bootstrap";
-import { useUserContext } from "../Context/UserContextProvider";
-import { useState, useRef } from "react";
-import { toast } from "react-toastify";
-import { useZxing } from "react-zxing";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import './assets/checkout.css';
+export default function Checkout() {
+  const { user, loggedIn, token } = useAuth();
+  const devices = useDevices();
+  const [orderItems, setOrderItems] = useState([]);
+  const [barcode, setBarcode] = useState('');
+  const [scanActive, setScanActive] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const navigate = useNavigate();
+  const deviceId = devices.length > 0 ? devices[0].deviceId : undefined;
 
-export default function Checkout({devices}) {
-    const {user, loggedIn, token} = useUserContext();
-    const [orderItems, setOrderItems] = useState([]);
-    const [barcode, setBarcode] = useState('');
-    const [paused, setPaused] = useState(true);
-    const [customerName, setCustomerName] = useState('');
-    const [customerPhone, setCustomerPhone] = useState('');
-    const navigate = useNavigate();
-    
-    const getItemByBarcode = async (barcode) => {
-        if (!barcode) {
-            return;
-        }
-
-        if (orderItems.some(item => item.barcode === barcode)) {
-            toast.error('This product is already in your order');
-            return;
-        }
-
-        await axios.get(`http://127.0.0.1:8000/api/inventory/${barcode}/`, {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            setOrderItems([...orderItems, {...response.data, purchaseQuantity: 1}]);
-        })
-        .catch((error) => {
-            console.log(error);
-            toast.error('A product with that barcode does not exist in our inventory'); 
-        })
-        
+  const addByBarcode = async (bc) => {
+    const code = (bc || barcode).trim();
+    if (!code) return;
+    if (orderItems.some(i => i.barcode === code)) {
+      toast.error('This product is already in your order');
+      return;
     }
-
-    const removeItem = (barcode) => {
-        setOrderItems(orderItems.filter((item) => item.barcode !== barcode));
+    try {
+      const { data } = await axios.get(`${API_BASE_URL}/api/inventory/${code}/`, {
+        headers: { Authorization: `Token ${token}` },
+      });
+      setOrderItems(prev => [...prev, { ...data, purchaseQuantity: 1 }]);
+      setBarcode('');
+    } catch {
+      toast.error('Product not found in inventory');
     }
-    
-    const {ref} = useZxing({
-        onDecodeResult: (result) => {
-            getItemByBarcode(result.text);
-        },
-        deviceId: devices.length > 0 && devices[0].deviceId,
-        paused: paused,
-        timeBetweenDecodingAttempts: 1,
-    });
-    const handleScan = () => {
-        setPaused((prev) => !prev);
-        setBarcode('');
+  };
+
+  const removeItem = (bc) => setOrderItems(prev => prev.filter(i => i.barcode !== bc));
+
+  const updateQty = (bc, qty) => {
+    const n = Number(qty);
+    if (n <= 0) { removeItem(bc); return; }
+    setOrderItems(prev => prev.map(i => i.barcode === bc ? { ...i, purchaseQuantity: n } : i));
+  };
+
+  const total = orderItems.reduce((s, i) => s + i.purchaseQuantity * i.price, 0);
+
+  const handleCheckout = async () => {
+    if (!customerName || !customerPhone) { toast.error('Customer name and phone are required'); return; }
+    if (orderItems.length === 0) { toast.error('Add items to the order first'); return; }
+    const productData = {};
+    for (const item of orderItems) productData[item.id] = item.purchaseQuantity;
+    try {
+      const { data } = await axios.post(`${API_BASE_URL}/api/order/`, {
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        order_items: JSON.stringify(productData),
+      }, { headers: { Authorization: `Token ${token}` } });
+      toast.success('Checkout successful!');
+      navigate(`/receipt/${data.orderId.substring(1)}`);
+    } catch {
+      toast.error('Checkout failed, please try again');
     }
+  };
 
-    const handleQuantityChange = (item, quantity) => {
-        console.log(quantity);
-
-        if (quantity <= 0 && quantity) {
-            removeItem(item.barcode);
-            return;
-        }
-        setOrderItems(orderItems.map((orderItem) => {
-            if(orderItem.barcode === item.barcode) {
-                return {...orderItem, purchaseQuantity: quantity};
-            }
-            return orderItem;
-        }));
-    }
-
-    const validateQuantity = (item, quantity) => {
-        if (quantity <= 0 || !quantity) {
-            removeItem(item.barcode);
-            return;
-        }
-    }
-    
-    const handleCancelCheckout = () => {
-        setOrderItems([]);
-        setCustomerName('');
-        setCustomerPhone('');
-        setPaused(true);
-    }
-
-    const handleCheckout = async () => {
-        if (!customerName || !customerPhone) {
-            toast.error('Cusomer\'s name and phone number are required');
-            return;
-        }
-
-        if (orderItems.length === 0) {
-            toast.error('There are no items to order');
-            return;
-        }
-
-        let productData = {}
-        for (let item of orderItems) {
-            productData[item.id] = item.purchaseQuantity;
-        }
-        
-        console.log(productData);
-
-        await axios.post('http://127.0.0.1:8000/api/order/', {
-            customer_name: customerName,
-            customer_phone: customerPhone,
-            order_items: JSON.stringify(productData)
-        }, {
-            headers: {
-                Authorization: `Token ${token}`
-            }
-        })
-        .then((response) => {
-            toast.success('Checkout successful');
-            setOrderItems([]);
-            setCustomerName('');
-            setCustomerPhone('');
-            setPaused(true);
-            navigate(`/receipt/${response.data.orderId.substring(1)}`);
-        })
-        .catch((error) => {
-            console.log(error);
-            toast.error('Something went wrong while checking out, please try again');
-        })
-    }
-
-
-    if(!loggedIn){
-        return (
-            <Container className="page-container">
-                <NavigationBar active='checkout' />
-                <h1 className="text-center major-heading">You need to be logged in to access this page</h1>
-            </Container>
-        )
-    }
-
+  if (!loggedIn) {
     return (
-        <Container className="page-container">
-            <NavigationBar active='checkout' />
-            <Container>
-                <DisplayUser />
-                <h1 className="heading">Checkout</h1>
-                <p className="text-center">(Checkout Page)</p>
-                <Container className="form-container">
-                    <Form.Control type="text" placeholder="Enter barcode" value={barcode} onChange={(e) => setBarcode(e.target.value)} />
-                    <Container className="btn-container">
-                        <Button variant="success" size="md" onClick={() => getItemByBarcode(barcode)}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg" viewBox="0 0 16 16">
-                                <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
-                            </svg>
-                        </Button>
-                        <Button variant="primary" size="md" className="btn-add" onClick={handleScan}>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" className="bi bi-upc-scan" viewBox="0 0 16 16">
-                                <path d="M1.5 1a.5.5 0 0 0-.5.5v3a.5.5 0 0 1-1 0v-3A1.5 1.5 0 0 1 1.5 0h3a.5.5 0 0 1 0 1zM11 .5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 16 1.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 1-.5-.5M.5 11a.5.5 0 0 1 .5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 1 0 1h-3A1.5 1.5 0 0 1 0 14.5v-3a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 1 .5-.5M3 4.5a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0z"/>
-                            </svg>
-                        </Button>
-                    </Container>
-                </Container>
-                <Container className={paused ? 'video-container d-none' : 'video-container'}>
-                    <video ref={ref} style={{width:'300px'}}/>
-                </Container>
-                <Container className="order-items-container mt-3">
-                    <h2 className="heading">Order Items</h2>
-                    <Container className="order-items">
-                        <Table striped bordered hover>
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Item Name</th>
-                                    <th>Quantity</th>
-                                    <th>Price</th>
-                                    <th>Total Price</th>
-                                    <th>Remove</th>
-                                </tr>   
-                            </thead>
-                            <tbody>
-                                {orderItems.map((item, index) => (
-                                    <tr key={index}>
-                                        <td>{index + 1}</td>
-                                        <td>{item.productName}</td>
-                                        <td>
-                                            <Form.Control type="number" className="quantity-number" 
-                                                value={item.purchaseQuantity} 
-                                                onChange={(e) => handleQuantityChange(item, e.target.value)} 
-                                                onBlur={(e) => validateQuantity(item, e.target.value)}
-                                            />
-                                        </td>
-                                        <td>{item.price}</td>
-                                        <td>PKR {item.purchaseQuantity * item.price}</td>
-                                        <td>
-                                            <Button variant="danger" size="sm" onClick={() => removeItem(item.barcode)}>
-                                                Remove
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colSpan={2}>
-                                        Cashier: {user.username} ({user.email})
-                                    </td>
-                                    <td colSpan={2} className="text-end">Total</td>
-                                    <td>
-                                        <strong>
-                                            PKR {orderItems.reduce((total, item) => total + item.purchaseQuantity * item.price, 0)}
-                                        </strong>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td colSpan={3}>
-                                        <strong>
-                                            Customer Name: {customerName}
-                                        </strong>
-                                    </td>
-                                    <td colSpan={3}>
-                                        <strong>
-                                            Customer Phone: {customerPhone}
-                                        </strong>
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </Table>
-                    </Container>
-                    <Container className="customer-info">
-                        <h2 className="heading">Customer Info</h2>
-                        <Container className="customer-form-container">
-                            <Form.Group>
-                                <Form.Label>Customer Name</Form.Label>
-                                <Form.Control type="text" placeholder="Enter Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                            </Form.Group>
-                            <Form.Group>    
-                                <Form.Label>Customer Phone</Form.Label>
-                                <Form.Control type="phone" placeholder="Enter Customer's Phone" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                            </Form.Group>
-                        </Container>
-                    </Container>
-                </Container>
-                <Container className="button-container">
-                    <Button variant="danger" onClick={handleCancelCheckout}>
-                        Cancel
-                    </Button>
-                    <Button variant="primary" onClick={handleCheckout}>
-                        Checkout
-                    </Button>
-                </Container>
-            </Container>
-        </Container>
-    )
+      <PageLayout title="Checkout">
+        <Alert severity="info">Please log in to continue.</Alert>
+      </PageLayout>
+    );
+  }
+
+  return (
+    <PageLayout title="Checkout">
+      <Grid container spacing={3}>
+        {/* Left: barcode input */}
+        <Grid item xs={12} lg={5}>
+          <Card sx={{ mb: 3 }}>
+            <CardHeader title="Add Items" titleTypographyProps={{ variant: 'h4' }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                <TextField
+                  placeholder="Enter barcode"
+                  size="small"
+                  value={barcode}
+                  onChange={(e) => setBarcode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addByBarcode()}
+                  fullWidth
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => setScanActive(prev => !prev)}>
+                          <QrCodeScannerIcon fontSize="small" color={scanActive ? 'primary' : 'action'} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <Button variant="contained" onClick={() => addByBarcode()} startIcon={<AddIcon />}>
+                  Add
+                </Button>
+              </Box>
+
+              {scanActive && (
+                <BarcodeScanner
+                  active={scanActive}
+                  onScan={(text) => { addByBarcode(text); setScanActive(false); }}
+                  onClose={() => setScanActive(false)}
+                  deviceId={deviceId}
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader title="Customer Info" titleTypographyProps={{ variant: 'h4' }} />
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField label="Customer Name" size="small" fullWidth value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+              <TextField label="Customer Phone" size="small" fullWidth value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Right: order summary */}
+        <Grid item xs={12} lg={7}>
+          <Card>
+            <CardHeader
+              title={<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><ShoppingCartIcon color="primary" /><Typography variant="h4">Order Summary</Typography></Box>}
+            />
+            <CardContent sx={{ p: 0 }}>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Product</TableCell>
+                      <TableCell align="center">Qty</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="right">Total</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {orderItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          No items added yet
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      orderItems.map(item => (
+                        <TableRow key={item.barcode}>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={600}>{item.productName}</Typography>
+                            <Typography variant="caption" color="text.secondary">{item.barcode}</Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <TextField
+                              type="number"
+                              size="small"
+                              value={item.purchaseQuantity}
+                              onChange={(e) => updateQty(item.barcode, e.target.value)}
+                              inputProps={{ min: 1, style: { textAlign: 'center', width: 60 } }}
+                              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1 } }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">PKR {item.price.toLocaleString()}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 600 }}>
+                            PKR {(item.purchaseQuantity * item.price).toLocaleString()}
+                          </TableCell>
+                          <TableCell>
+                            <IconButton size="small" color="error" onClick={() => removeItem(item.barcode)}>
+                              <DeleteOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <Divider />
+              <Box sx={{ px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body1" color="text.secondary">
+                  Cashier: {user?.username}
+                </Typography>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="caption" color="text.secondary">Total</Typography>
+                  <Typography variant="h3" fontWeight={800} color="primary.main">
+                    PKR {total.toLocaleString()}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Divider />
+              <Box sx={{ px: 3, py: 2, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+                <Button variant="outlined" color="error" onClick={() => { setOrderItems([]); setCustomerName(''); setCustomerPhone(''); }}>
+                  Clear
+                </Button>
+                <Button variant="contained" size="large" onClick={handleCheckout}>
+                  Complete Checkout
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </PageLayout>
+  );
 }
